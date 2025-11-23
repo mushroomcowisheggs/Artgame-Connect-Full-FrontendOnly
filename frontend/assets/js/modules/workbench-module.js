@@ -9,6 +9,23 @@ let pendingMilestoneFiles = []; // 临时待上传文件（含预览数据）
 // 工作台项目聊天前四条消息自动回复计数（按项目分隔）
 let workbenchProjectMessageCounts = {};
 
+// Caching helpers for milestone files (localStorage)
+function getMilestoneCacheKey(projectId, milestoneId) {
+    return `wb_files_${projectId}_${milestoneId}`;
+}
+
+function loadMilestoneFilesFromCache(projectId, milestoneId) {
+    const key = getMilestoneCacheKey(projectId, milestoneId);
+    const cached = loadFromLocalJson(key, []);
+    return Array.isArray(cached) ? cached : [];
+}
+
+function saveMilestoneFilesToCache(projectId, milestoneId, files) {
+    const key = getMilestoneCacheKey(projectId, milestoneId);
+    // Only store serialized records
+    saveToLocalJson(key, files.map(serializeFileRecord));
+}
+
 // 同步聊天弹窗内容与工作台内嵌聊天
 function syncChatModal() {
     const src = document.getElementById('workbench-messages');
@@ -376,7 +393,7 @@ async function loadMilestones() {
             description: t('milestone1Desc'),
             stage: 'planning',
             payment: 30,
-            files: [],
+            files: [], // will be filled from cache
             createdAt: new Date().toISOString()
         },
         {
@@ -400,6 +417,14 @@ async function loadMilestones() {
             createdAt: new Date().toISOString()
         }
     ];
+
+    // Load cached files per milestone
+    milestones.forEach(m => {
+        const cached = loadMilestoneFilesFromCache(currentWorkbenchProjectId, m.id);
+        if (cached && cached.length) {
+            m.files = cached;
+        }
+    });
     
     renderMilestones();
     initDragAndDrop();
@@ -700,6 +725,8 @@ function submitFiles() {
             previewData: r.previewData
         });
     });
+    // Persist to cache
+    saveMilestoneFilesToCache(currentWorkbenchProjectId, currentMilestoneId, milestone.files);
     pendingMilestoneFiles = [];
     alert(t('filesUploaded'));
     closeFileUploadModal();

@@ -106,3 +106,36 @@ function showNoData(elementId) {
         element.innerHTML = `<p style="text-align:center;color:#999;">${t('noData')}</p>`;
     }
 }
+
+/**
+ * Browser caching helpers (localStorage) for file drafts
+ * Note: Intended for small files (images/text). Large files may exceed storage limits.
+ */
+function saveToLocalJson(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn('Cache save failed', e); }
+}
+
+function loadFromLocalJson(key, fallback = null) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallback;
+        return JSON.parse(raw);
+    } catch (e) { console.warn('Cache load failed', e); return fallback; }
+}
+
+function removeLocalKey(key) {
+    try { localStorage.removeItem(key); } catch (e) { console.warn('Cache remove failed', e); }
+}
+
+// Generic file serialization for caching (already converted by caller)
+function serializeFileRecord(rec) {
+    return {
+        name: rec.name,
+        size: rec.size,
+        type: rec.type,
+        uploadedAt: rec.uploadedAt || new Date().toISOString(),
+        previewType: rec.previewType || null,
+        previewData: rec.previewData || null
+    };
+}
+

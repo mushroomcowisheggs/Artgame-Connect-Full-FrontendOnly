@@ -287,8 +287,9 @@
                     <textarea id="activityContent" placeholder="What's on your mind?"></textarea>
                 </div>
                 <div class="form-group">
-                    <label data-i18n="activityImage">Image URL (optional)</label>
-                    <input type="text" id="activityImage" placeholder="https://...">
+                    <label data-i18n="activityImage">Upload Image (optional)</label>
+                    <input type="file" id="activityFiles" multiple style="padding:10px;border:1px solid #ddd;border-radius:6px;width:100%;">
+                    <div id="activity-file-list" style="margin-top:12px;"></div>
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
                     <button class="btn btn-secondary" onclick="closeActivityModal()" data-i18n="cancel">Cancel</button>

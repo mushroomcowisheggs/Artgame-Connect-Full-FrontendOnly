@@ -3,6 +3,62 @@
  * 广场模块 - 活动动态
  */
 
+// Draft & file upload caching for new activity
+let plazaPendingFiles = [];
+const PLAZA_DRAFT_KEY = 'plaza_draft_activity';
+
+function handlePlazaFileSelection() {
+    const input = document.getElementById('activityFiles');
+    const list = document.getElementById('activity-file-list');
+    if (!input || !list) return;
+    const files = input.files;
+    plazaPendingFiles = [];
+    list.innerHTML = '';
+    if (!files || !files.length) { savePlazaDraft(); return; }
+    Array.from(files).forEach((file, idx) => {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'padding:8px;border:1px solid #eee;border-radius:6px;margin-bottom:6px;background:#fafafa;display:flex;gap:12px;align-items:flex-start;';
+        wrapper.innerHTML = `<div style="flex:1;">\n            <div style="font-weight:600;font-size:13px;">📎 ${escapeHtml(file.name)} <span style=\"color:#999;font-weight:400;\">(${(file.size/1024).toFixed(1)} KB)</span></div>\n            <div id="activity-preview-${idx}" style="margin-top:6px;font-size:12px;color:#555;">${t('generatingPreview') || 'Generating preview...'}</div>\n        </div>`;
+        list.appendChild(wrapper);
+        const reader = new FileReader();
+        const rec = { name: file.name, size: file.size, type: file.type, uploadedAt: new Date().toISOString(), previewType: null, previewData: null };
+        if (file.type.startsWith('image/')) {
+            reader.onload = e => {
+                rec.previewType = 'image';
+                rec.previewData = e.target.result;
+                const pv = document.getElementById(`activity-preview-${idx}`);
+                if (pv) pv.innerHTML = `<img src="${e.target.result}" alt="${escapeHtml(file.name)}" style="max-width:160px;border-radius:4px;box-shadow:0 0 0 1px #ddd;" />`;
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type.startsWith('text/') || file.type === 'application/json') {
+            reader.onload = e => {
+                rec.previewType = 'text';
+                const content = e.target.result.slice(0, 300);
+                rec.previewData = content;
+                const pv = document.getElementById(`activity-preview-${idx}`);
+                if (pv) pv.textContent = content + (e.target.result.length > 300 ? ' ...' : '');
+            };
+            reader.readAsText(file);
+        } else {
+            const pv = document.getElementById(`activity-preview-${idx}`);
+            if (pv) pv.textContent = t('noPreviewAvailable') || 'No preview available';
+        }
+        plazaPendingFiles.push(rec);
+    });
+    savePlazaDraft();
+}
+
+function savePlazaDraft() {
+    const title = document.getElementById('activityTitle')?.value || '';
+    const content = document.getElementById('activityContent')?.value || '';
+    const draft = { title, content, files: plazaPendingFiles.map(serializeFileRecord) };
+    saveToLocalJson(PLAZA_DRAFT_KEY, draft);
+}
+
+function loadPlazaDraft() {
+    return loadFromLocalJson(PLAZA_DRAFT_KEY, null);
+}
+
 /**
  * 加载活动 Feed
  */
@@ -181,6 +237,34 @@ async function submitComment(activityId) {
  */
 function openActivityModal() {
     document.getElementById('activityModal').classList.add('show');
+    // Attach handlers once
+    const filesInput = document.getElementById('activityFiles');
+    if (filesInput && !filesInput._bound) { filesInput.addEventListener('change', handlePlazaFileSelection); filesInput._bound = true; }
+    const titleEl = document.getElementById('activityTitle');
+    const contentEl = document.getElementById('activityContent');
+    [titleEl, contentEl].forEach(el => { if (el && !el._bound) { el.addEventListener('input', savePlazaDraft); el._bound = true; } });
+    // Load draft
+    const draft = loadPlazaDraft();
+    if (draft) {
+        if (titleEl) titleEl.value = draft.title || '';
+        if (contentEl) contentEl.value = draft.content || '';
+        plazaPendingFiles = draft.files ? draft.files : [];
+        // rebuild previews
+        const list = document.getElementById('activity-file-list');
+        if (list) {
+            list.innerHTML = '';
+            plazaPendingFiles.forEach((rec, idx) => {
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = 'padding:8px;border:1px solid #eee;border-radius:6px;margin-bottom:6px;background:#fafafa;';
+                let previewHtml = '';
+                if (rec.previewType === 'image') previewHtml = `<img src="${escapeHtml(rec.previewData)}" alt="${escapeHtml(rec.name)}" style="max-width:160px;border-radius:4px;box-shadow:0 0 0 1px #ddd;" />`;
+                else if (rec.previewType === 'text') previewHtml = `<div style="font-size:12px;white-space:pre-wrap;max-height:160px;overflow:auto;background:#fff;border:1px solid #eee;padding:6px;border-radius:4px;">${escapeHtml(rec.previewData)}</div>`;
+                else previewHtml = `<div style="font-size:12px;color:#555;">${t('noPreviewAvailable') || 'No preview available'}</div>`;
+                wrapper.innerHTML = `<div style="font-weight:600;font-size:13px;">📎 ${escapeHtml(rec.name)} <span style=\"color:#999;font-weight:400;\">(${(rec.size/1024).toFixed(1)} KB)</span></div><div style="margin-top:6px;">${previewHtml}</div>`;
+                list.appendChild(wrapper);
+            });
+        }
+    }
 }
 
 /**
@@ -188,9 +272,7 @@ function openActivityModal() {
  */
 function closeActivityModal() {
     document.getElementById('activityModal').classList.remove('show');
-    document.getElementById('activityTitle').value = '';
-    document.getElementById('activityContent').value = '';
-    document.getElementById('activityImage').value = '';
+    // Do not clear draft to preserve between sessions; user can manually edit.
 }
 
 /**
@@ -199,7 +281,10 @@ function closeActivityModal() {
 async function submitActivity() {
     const title = document.getElementById('activityTitle').value.trim();
     const content = document.getElementById('activityContent').value.trim();
-    const image = document.getElementById('activityImage').value.trim();
+    // Use first image file (if any) as image field; fallback empty string
+    let image = '';
+    const firstImage = plazaPendingFiles.find(f => f.previewType === 'image');
+    if (firstImage) image = firstImage.previewData; // base64 data URL
     
     if (!content) {
         alert('Please enter content');
@@ -220,6 +305,11 @@ async function submitActivity() {
         const data = await res.json();
         
         if (data.code === 200) {
+            // Clear draft cache after successful publish
+            removeLocalKey(PLAZA_DRAFT_KEY);
+            plazaPendingFiles = [];
+            const list = document.getElementById('activity-file-list');
+            if (list) list.innerHTML = '';
             closeActivityModal();
             loadFeed();
             alert(t('success'));
