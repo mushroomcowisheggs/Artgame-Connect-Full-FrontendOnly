@@ -52,6 +52,18 @@ class MockBackend {
         if (!localStorage.getItem('db_project_subscriptions')) {
             localStorage.setItem('db_project_subscriptions', JSON.stringify([]));
         }
+        if (!localStorage.getItem('db_personal_projects')) {
+            localStorage.setItem('db_personal_projects', JSON.stringify([]));
+        }
+        if (!localStorage.getItem('db_project_parts')) {
+            localStorage.setItem('db_project_parts', JSON.stringify([]));
+        }
+        if (!localStorage.getItem('db_uploads')) {
+            localStorage.setItem('db_uploads', JSON.stringify([]));
+        }
+        if (!localStorage.getItem('db_auto_likes')) {
+            localStorage.setItem('db_auto_likes', JSON.stringify([]));
+        }
         if (!localStorage.getItem('session')) {
             localStorage.setItem('session', JSON.stringify({}));
         }
@@ -112,20 +124,47 @@ class MockBackend {
         localStorage.setItem('db_users', JSON.stringify(sampleUsers));
 
         // 創建示例消息
+        const now = new Date();
         const sampleMessages = [
             {
                 id: 1,
                 content: 'Welcome to Art Game Connect! 歡迎來到藝術遊戲連結平台！',
                 author: 'Alice',
                 author_id: 1,
-                createdAt: new Date().toISOString()
+                category: 'general',
+                createdAt: now.toISOString()
             },
             {
                 id: 2,
                 content: 'Looking for talented 3D artists for my game project. 尋找有才華的3D藝術家參與我的遊戲項目。',
                 author: 'Bob',
                 author_id: 2,
-                createdAt: new Date().toISOString()
+                category: 'modeling',
+                createdAt: now.toISOString()
+            },
+            {
+                id: 3,
+                content: 'Exploring new painting techniques with digital brushes. 探索數位繪畫新技術。',
+                author: 'Charlie',
+                author_id: 3,
+                category: 'painting',
+                createdAt: now.toISOString()
+            },
+            {
+                id: 4,
+                content: 'Collaborative soundtrack experiment available – need sound designers! 需要音效設計師參與協作原聲帶實驗。',
+                author: 'Alice',
+                author_id: 1,
+                category: 'sound',
+                createdAt: now.toISOString()
+            },
+            {
+                id: 5,
+                content: 'Front-end prototype ready for integration. 前端原型已準備好等待整合。',
+                author: 'Bob',
+                author_id: 2,
+                category: 'programming',
+                createdAt: now.toISOString()
             }
         ];
         
@@ -365,7 +404,13 @@ class MockBackend {
     
     async getMessages() {
         const messages = this.getTable('db_messages');
-        return { code: 200, messages: messages.reverse() };
+        // 支持分类筛选（通过 apiAdapter 传入可选 category）
+        const categoryArg = arguments[0] && arguments[0].category ? arguments[0].category.trim() : (arguments[0] && typeof arguments[0] === 'string' ? arguments[0].trim() : '');
+        let list = messages;
+        if (categoryArg && categoryArg !== 'all') {
+            list = messages.filter(m => (m.category || 'general') === categoryArg);
+        }
+        return { code: 200, messages: list.reverse().map(m => ({ ...m, like_count: m.like_count || 0 })) };
     }
 
     async addMessage(data) {
@@ -379,12 +424,15 @@ class MockBackend {
         const author = session.username || data.col_author || data.author || '匿名Anonymous';
         const authorId = session.user_id || null;
         
+        const category = (data.category || data.col_category || 'general').trim();
         const messages = this.getTable('db_messages');
         const newMessage = {
             id: this.generateId('db_messages'),
             content,
             author,
             author_id: authorId,
+            category,
+            like_count: 0,
             createdAt: new Date().toISOString()
         };
         
@@ -606,6 +654,7 @@ class MockBackend {
         }
         
         const activities = this.getTable('db_activities');
+        const isFirstActivity = authorId ? activities.filter(a => a.author_id === authorId).length === 0 : false;
         const newActivity = {
             id: this.generateId('db_activities'),
             type,
@@ -614,13 +663,33 @@ class MockBackend {
             image,
             author,
             author_id: authorId,
-            like_count: 0,
+            like_count: 0, // 不再立即自动点赞
             createdAt: new Date().toISOString()
         };
-        
         activities.push(newActivity);
         this.saveTable('db_activities', activities);
-        
+
+        // 如果是该用户的第一条活动，2 秒后自动系统点赞一次
+        if (isFirstActivity) {
+            setTimeout(() => {
+                const freshActivities = this.getTable('db_activities');
+                const idx = freshActivities.findIndex(a => a.id === newActivity.id);
+                if (idx !== -1) {
+                    freshActivities[idx].like_count = (freshActivities[idx].like_count || 0) + 1;
+                    this.saveTable('db_activities', freshActivities);
+                    // 记录自动点赞事件（便于后续扩展）
+                    const autoLikes = this.getTable('db_auto_likes');
+                    autoLikes.push({
+                        id: this.generateId('db_auto_likes'),
+                        activity_id: newActivity.id,
+                        user_id: null, // 系统行为
+                        created_at: new Date().toISOString()
+                    });
+                    this.saveTable('db_auto_likes', autoLikes);
+                }
+            }, 2000);
+        }
+
         return { code: 200, message: '发布成功 Published successfully' };
     }
 
@@ -824,6 +893,8 @@ class MockBackend {
         
         // 獲取里程碑
         const milestones = this.getTable('db_milestones').filter(m => m.project_id === projectId);
+        // 获取项目步骤 parts
+        const parts = this.getTable('db_project_parts').filter(p => p.project_id === projectId);
         
         // 獲取消息
         const messages = this.getTable('db_collaboration_messages');
@@ -847,6 +918,7 @@ class MockBackend {
             project: {
                 ...project,
                 milestones,
+                parts,
                 messages: projectMessages,
                 requester: requester ? { id: requester.id, username: requester.username, user_role: requester.user_role, skills: requester.skills } : null,
                 creator: creator ? { id: creator.id, username: creator.username, user_role: creator.user_role, skills: creator.skills } : null
@@ -859,6 +931,8 @@ class MockBackend {
         const description = data.description?.trim() || '';
         const budget = parseFloat(data.budget || 0);
         const skillTag = data.tags?.trim() || '';
+        const timeLimit = parseInt(data.time_limit || 30);
+        const parts = Array.isArray(data.parts) ? data.parts : [];
         const session = this.getSession();
         
         if (!session.user_id) {
@@ -897,10 +971,28 @@ class MockBackend {
             requester_confirmed: 0,
             creator_confirmed: 0,
             withdrawn: 0,
+            time_limit: timeLimit,
             created_at: new Date().toISOString()
         };
         collabProjects.push(collabProject);
         this.saveTable('db_collaboration_projects', collabProjects);
+
+        if (parts.length > 0) {
+            const projectParts = this.getTable('db_project_parts');
+            parts.forEach((p, idx) => {
+                const titleP = (p.title || `Part ${idx + 1}`).trim();
+                const percentageP = parseFloat(p.percentage || 0);
+                projectParts.push({
+                    id: this.generateId('db_project_parts'),
+                    project_id: collabProject.id,
+                    title: titleP,
+                    percentage: percentageP,
+                    status: 'in_progress',
+                    created_at: new Date().toISOString()
+                });
+            });
+            this.saveTable('db_project_parts', projectParts);
+        }
         
         return { code: 200, message: '项目创建成功 Project created successfully', project_id: collabProject.id };
     }
@@ -1224,6 +1316,86 @@ class MockBackend {
         }
         
         return { code: 200, message: '评价提交成功 Review submitted successfully' };
+    }
+
+    /**
+     * ===== 個人項目 API =====
+     */
+    
+    async getPersonalProjects() {
+        const session = this.getSession();
+        
+        if (!session.user_id) {
+            throw new Error('未登录 Not logged in');
+        }
+        
+        const projects = this.getTable('db_personal_projects');
+        const myProjects = projects.filter(p => p.user_id === session.user_id);
+        
+        return { code: 200, projects: myProjects };
+    }
+
+    async addPersonalProject(data) {
+        const session = this.getSession();
+        
+        if (!session.user_id) {
+            throw new Error('未登录 Not logged in');
+        }
+        
+        const title = data.title?.trim();
+        const description = data.description?.trim() || '';
+        const image = data.image?.trim() || '';
+        const link = data.link?.trim() || '';
+        
+        if (!title) {
+            throw new Error('项目标题不能为空 Project title cannot be empty');
+        }
+        
+        const projects = this.getTable('db_personal_projects');
+        const newProject = {
+            id: this.generateId('db_personal_projects'),
+            user_id: session.user_id,
+            title,
+            description,
+            image,
+            link,
+            created_at: new Date().toISOString()
+        };
+        
+        projects.push(newProject);
+        this.saveTable('db_personal_projects', projects);
+        
+        return { code: 200, message: '个人项目添加成功 Personal project added successfully' };
+    }
+
+    async deletePersonalProject(data) {
+        const session = this.getSession();
+        
+        if (!session.user_id) {
+            throw new Error('未登录 Not logged in');
+        }
+        
+        const projectId = parseInt(data.project_id || 0);
+        
+        if (projectId <= 0) {
+            throw new Error('无效的项目ID Invalid project ID');
+        }
+        
+        const projects = this.getTable('db_personal_projects');
+        const projectIndex = projects.findIndex(p => p.id === projectId);
+        
+        if (projectIndex === -1) {
+            throw new Error('项目不存在 Project not found');
+        }
+        
+        if (projects[projectIndex].user_id !== session.user_id) {
+            throw new Error('无权删除此项目 No permission to delete this project');
+        }
+        
+        projects.splice(projectIndex, 1);
+        this.saveTable('db_personal_projects', projects);
+        
+        return { code: 200, message: '删除成功 Deleted successfully' };
     }
 
     /**

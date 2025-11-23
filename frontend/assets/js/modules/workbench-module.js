@@ -5,6 +5,48 @@
 
 let currentWorkbenchProjectId = null;
 let milestones = []; // 里程碑数据
+let pendingMilestoneFiles = []; // 临时待上传文件（含预览数据）
+// 全局定义：文件选择预览处理（避免条件内作用域问题）
+function handleMilestoneFileSelection() {
+    const fileInput = document.getElementById('milestoneFiles');
+    if (!fileInput) return;
+    const files = fileInput.files;
+    const list = document.getElementById('file-list');
+    if (!list) return;
+    list.innerHTML = '';
+    pendingMilestoneFiles = [];
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file, idx) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding:8px;border:1px solid #eee;border-radius:6px;margin-bottom:6px;background:#fafafa;display:flex;gap:12px;align-items:flex-start;';
+        item.innerHTML = `<div style="flex:1;">\n            <div style="font-weight:600;font-size:13px;">📎 ${escapeHtml(file.name)} <span style="color:#999;font-weight:400;">(${(file.size/1024).toFixed(1)} KB)</span></div>\n            <div id="preview-${idx}" style="margin-top:6px;font-size:12px;color:#555;">${t('generatingPreview') || 'Generating preview...'}</div>\n        </div>`;
+        list.appendChild(item);
+        const reader = new FileReader();
+        const record = { name: file.name, size: file.size, type: file.type, uploadedAt: new Date().toISOString(), previewType: null, previewData: null };
+        if (file.type.startsWith('image/')) {
+            reader.onload = e => {
+                record.previewType = 'image';
+                record.previewData = e.target.result;
+                const pv = document.getElementById(`preview-${idx}`);
+                if (pv) pv.innerHTML = `<img src="${e.target.result}" alt="${escapeHtml(file.name)}" style="max-width:120px;border-radius:4px;box-shadow:0 0 0 1px #ddd;" />`;
+            };
+            reader.readAsDataURL(file);
+        } else if (file.type.startsWith('text/') || file.type === 'application/json') {
+            reader.onload = e => {
+                record.previewType = 'text';
+                const content = e.target.result.slice(0, 300);
+                record.previewData = content;
+                const pv = document.getElementById(`preview-${idx}`);
+                if (pv) pv.textContent = content + (e.target.result.length > 300 ? ' ...' : '');
+            };
+            reader.readAsText(file);
+        } else {
+            const pv = document.getElementById(`preview-${idx}`);
+            if (pv) pv.textContent = t('noPreviewAvailable') || 'No preview available';
+        }
+        pendingMilestoneFiles.push(record);
+    });
+}
 
 /**
  * 加载工作台
@@ -13,14 +55,19 @@ async function loadWorkBench() {
     const workbenchContent = document.getElementById('workbench-content');
     const projectListDiv = document.getElementById('workbench-project-list');
     const detailDiv = document.getElementById('workbench-detail');
+    const chatBtn = document.getElementById('chat-btn');
     
     // 隐藏详情界面，显示项目列表
     detailDiv.style.display = 'none';
     projectListDiv.style.display = 'block';
+    if (chatBtn) chatBtn.style.display = 'none';
     
     projectListDiv.innerHTML = `<div class="loading">${t('loading')}</div>`;
     
     try {
+    pendingMilestoneFiles = [];
+    const input = document.getElementById('milestoneFiles');
+    input.onchange = handleMilestoneFileSelection;
         const user = getCurrentUser();
         const res = await fetch('../backend/api/api.php?action=get_collaboration_projects');
         const data = await res.json();
@@ -30,6 +77,7 @@ async function loadWorkBench() {
             const myProjects = data.projects.filter(p => 
                 p.requester_id === user.id || p.creator_id === user.id
             );
+    pendingMilestoneFiles = [];
             
             if (myProjects.length === 0) {
                 projectListDiv.innerHTML = `
@@ -94,10 +142,12 @@ async function openWorkbenchProject(projectId) {
     
     const projectListDiv = document.getElementById('workbench-project-list');
     const detailDiv = document.getElementById('workbench-detail');
+    const chatBtn = document.getElementById('chat-btn');
     
     // 显示详情界面，隐藏项目列表
     projectListDiv.style.display = 'none';
     detailDiv.style.display = 'block';
+    if (chatBtn) chatBtn.style.display = 'flex';
     
     // 加载项目详情和里程碑
     await loadWorkbenchProjectDetail();
@@ -110,6 +160,8 @@ async function openWorkbenchProject(projectId) {
 function backToProjectList() {
     currentWorkbenchProjectId = null;
     milestones = [];
+    const chatBtn = document.getElementById('chat-btn');
+    if (chatBtn) chatBtn.style.display = 'none';
     loadWorkBench();
 }
 
@@ -148,17 +200,41 @@ async function loadWorkbenchProjectDetail() {
                 final: (totalBudget * 0.3).toFixed(2)
             };
             
+            // 时间进度 & Parts 进度
+            const createdDate = new Date(project.created_at);
+            const now = new Date();
+            const timeLimit = project.time_limit || 30;
+            const daysPassed = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
+            const timeProgress = Math.min(100, (daysPassed / timeLimit) * 100);
+            let partsProgressBlock = '';
+            if (project.parts && project.parts.length > 0) {
+                const totalPartsProgress = project.parts.reduce((sum, part) => sum + (part.percentage || 0), 0);
+                const avgPartsProgress = totalPartsProgress / project.parts.length;
+                partsProgressBlock = `
+                <div style=\"margin-top:20px;\">
+                    <h4 style=\"margin:0 0 8px 0;font-size:14px;\">${t('partsProgress') || 'Parts Progress'}</h4>
+                    <div class=\"progress-bar-container\">
+                        <div class=\"progress-bar-fill\" style=\"width:${avgPartsProgress}%;\"></div>
+                        <div class=\"progress-bar-text\">${avgPartsProgress.toFixed(1)}% (${project.parts.length} ${t('parts') || 'parts'})</div>
+                    </div>
+                </div>`;
+            } else {
+                partsProgressBlock = `<p style='color:#999;margin:12px 0 0;'>${t('noMilestonesConfigured') || 'No milestones or parts configured'}</p>`;
+            }
+
             let html = `
-                <div class="project-detail-header" style="display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                        <h2 style="margin:0;">${escapeHtml(project.title)}</h2>
+                <div class="project-detail-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                    <div style="flex:1;">
+                        <h2 style="margin:0;display:flex;align-items:center;gap:10px;">${escapeHtml(project.title)}
+                            <button class="icon-btn chat-toggle-btn" onclick="toggleWorkbenchChat()" title="${t('projectChat') || 'Project Chat'}" aria-label="${t('projectChat') || 'Project Chat'}">💬</button>
+                        </h2>
                         <div class="project-meta" style="margin-top:8px;">
                             <span class="status-badge ${statusClass}">${statusText}</span>
                             <span>${t('budget')}: $${totalBudget}</span>
                             <span class="role-badge">${isRequester ? t('asRequester') : t('asCreator')}</span>
                         </div>
                     </div>
-                    <div>
+                    <div style="display:flex;gap:8px;align-items:center;">
                         ${project.status === 'closed' ? `
                             <button class="btn btn-primary" onclick="openProjectReviewModal()">${t('submitProjectReview')}</button>
                         ` : ''}
@@ -175,11 +251,22 @@ async function loadWorkbenchProjectDetail() {
                         <span>${t('finalPayment')}: $${milestonePayments.final} (30%)</span>
                     </div>
                 </div>
+                <div style=\"margin-top:20px;padding:16px;background:#f9f9f9;border-radius:8px;\">
+                    <h3 style=\"margin:0 0 12px 0;font-size:18px;\">${t('projectProgress') || 'Project Progress'}</h3>
+                    <div style=\"margin-bottom:16px;\">
+                        <h4 style=\"margin:0 0 8px 0;font-size:14px;\">${t('timeProgress') || 'Time Progress'}</h4>
+                        <div class=\"progress-bar-container\">
+                            <div class=\"progress-bar-fill\" style=\"width:${timeProgress}%;\"></div>
+                            <div class=\"progress-bar-text\">${daysPassed} / ${timeLimit} days (${timeProgress.toFixed(1)}%)</div>
+                        </div>
+                    </div>
+                    ${partsProgressBlock}
+                </div>
             `;
             
             projectInfoDiv.innerHTML = html;
             
-            // 加载消息（简单的聊天功能）
+            // 初始隐藏聊天区（通过按钮展开）
             messagesDiv.innerHTML = `<p style="color:#999;text-align:center;">${t('noChatMessages')}</p>`;
         } else {
             projectInfoDiv.innerHTML = `<p style="color:#e74c3c;">${t('error')}</p>`;
@@ -187,6 +274,41 @@ async function loadWorkbenchProjectDetail() {
     } catch (err) {
         projectInfoDiv.innerHTML = `<p style="color:#e74c3c;">${t('error')}</p>`;
     }
+}
+
+// Toggle Workbench Chat Section
+function toggleWorkbenchChat() {
+    const section = document.getElementById('workbench-chat-section');
+    if (!section) return;
+    const isHidden = section.style.display === 'none' || section.style.display === '';
+    section.style.display = isHidden ? 'block' : 'none';
+}
+
+// Chat modal handlers (mirroring full-stack design)
+function openChatModal() {
+    const modal = document.getElementById('chat-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+}
+
+function closeChatModal() {
+    const modal = document.getElementById('chat-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+}
+
+function sendChatMessage() {
+    const input = document.getElementById('chat-message-input');
+    const list = document.getElementById('chat-messages');
+    if (!input || !list) return;
+    const text = input.value.trim();
+    if (!text) return;
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 12px;margin-bottom:8px;background:#fff;border-radius:8px;border:1px solid #eee;font-size:14px;line-height:1.5;';
+    div.innerHTML = `<strong>${escapeHtml(getCurrentUser().username || 'You')}:</strong> ${escapeHtml(text)}`;
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+    input.value = '';
 }
 
 /**
@@ -306,13 +428,13 @@ function renderMilestoneCard(milestone) {
     
     let filesHtml = '';
     if (milestone.files && milestone.files.length > 0) {
+        const previewImages = milestone.files.filter(f => f.previewType === 'image').slice(0,3).map(f => `<img src="${escapeHtml(f.previewData)}" alt="${escapeHtml(f.name)}" style="max-width:70px;max-height:70px;object-fit:contain;border:1px solid #ddd;border-radius:4px;margin:4px;" />`).join('');
+        const previewText = milestone.files.find(f => f.previewType === 'text');
+        const textBlock = previewText ? `<div style="padding:4px;font-size:11px;background:#fff;border:1px solid #eee;border-radius:4px;margin:4px;max-height:70px;overflow:auto;white-space:pre-wrap;">${escapeHtml(previewText.previewData.slice(0,180))}${previewText.previewData.length>180?' ...':''}</div>` : '';
         filesHtml = `
             <div class="milestone-card-files">
-                ${milestone.files.map(f => `
-                    <div class="milestone-file-item">
-                        📎 ${escapeHtml(f.name)}
-                    </div>
-                `).join('')}
+                ${milestone.files.map(f => `<div class=\"milestone-file-item\">📎 ${escapeHtml(f.name)}</div>`).join('')}
+                ${(previewImages || textBlock) ? `<div class=\"milestone-file-previews\" style=\"display:flex;flex-wrap:wrap;\">${previewImages}${textBlock}</div>` : ''}
             </div>
         `;
     }
@@ -428,10 +550,10 @@ function openMilestoneDetail(milestoneId) {
                 <strong>${t('uploadedFiles')}:</strong>
                 <div style="margin-top:8px;">
                     ${milestone.files.map(f => `
-                        <div style="padding:8px;background:#f9f9f9;border-radius:4px;margin-bottom:4px;">
-                            📎 ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(2)} KB)
-                        </div>
-                    `).join('')}
+                        <div style=\"padding:8px;background:#f9f9f9;border-radius:4px;margin-bottom:4px;\">📎 ${escapeHtml(f.name)} (${(f.size/1024).toFixed(2)} KB)
+                            ${f.previewType==='image' ? `<div style=\\"margin-top:6px;\\"><img src=\\"${escapeHtml(f.previewData)}\\" alt=\\"${escapeHtml(f.name)}\\" style=\\"max-width:160px;max-height:160px;object-fit:contain;border:1px solid #ddd;border-radius:4px;\\" /></div>` : ''}
+                            ${f.previewType==='text' ? `<div style=\\"margin-top:6px;font-size:12px;white-space:pre-wrap;max-height:160px;overflow:auto;background:#fff;border:1px solid #eee;padding:6px;border-radius:4px;\\">${escapeHtml(f.previewData)}</div>` : ''}
+                        </div>`).join('')}
                 </div>
             </div>
         `;
@@ -453,12 +575,11 @@ function openMilestoneDetail(milestoneId) {
             </div>
         </div>
         ${filesHtml}
-        <div style="margin-top:20px;display:flex;gap:8px;">
-            <button class="btn btn-primary" onclick="openFileUploadModal(${milestoneId})">${t('uploadFiles')}</button>
-            ${milestone.stage !== 'review' && milestone.stage !== 'completed' ? `
+        ${milestone.stage !== 'review' && milestone.stage !== 'completed' ? `
+            <div style="margin-top:20px;display:flex;gap:8px;">
                 <button class="btn btn-secondary" onclick="submitMilestoneForReview(${milestoneId})">${t('submitForReview')}</button>
-            ` : ''}
-        </div>
+            </div>
+        ` : ''}
     `;
     
     modal.classList.add('show');
@@ -477,9 +598,16 @@ function closeMilestoneDetailModal() {
  */
 function openFileUploadModal(milestoneId) {
     currentMilestoneId = milestoneId;
-    document.getElementById('fileUploadModal').classList.add('show');
-    document.getElementById('file-list').innerHTML = '';
-    document.getElementById('milestoneFiles').value = '';
+    const modal = document.getElementById('fileUploadModal');
+    if (modal) modal.classList.add('show');
+    const list = document.getElementById('file-list');
+    if (list) list.innerHTML = '';
+    const input = document.getElementById('milestoneFiles');
+    if (input) {
+        input.value = '';
+        input.onchange = handleMilestoneFileSelection; // 绑定预览
+    }
+    pendingMilestoneFiles = [];
 }
 
 /**
@@ -496,28 +624,36 @@ function closeFileUploadModal() {
  */
 function submitFiles() {
     const fileInput = document.getElementById('milestoneFiles');
-    const files = fileInput.files;
-    
-    if (files.length === 0) {
+    const files = fileInput ? fileInput.files : [];
+    if (!files || files.length === 0) {
         alert(t('pleaseSelectFiles'));
         return;
     }
-    
+    // 如果预览缓存未生成（可能未触发 onchange），回退生成基础记录
+    if (pendingMilestoneFiles.length === 0) {
+        pendingMilestoneFiles = Array.from(files).map(f => ({
+            name: f.name,
+            size: f.size,
+            type: f.type,
+            uploadedAt: new Date().toISOString(),
+            previewType: null,
+            previewData: null
+        }));
+    }
     if (!currentMilestoneId) return;
-    
     const milestone = milestones.find(m => m.id === currentMilestoneId);
     if (!milestone) return;
-    
-    // 原型实现：只保存文件信息，不实际上传
-    for (let i = 0; i < files.length; i++) {
+    pendingMilestoneFiles.forEach(r => {
         milestone.files.push({
-            name: files[i].name,
-            size: files[i].size,
-            type: files[i].type,
-            uploadedAt: new Date().toISOString()
+            name: r.name,
+            size: r.size,
+            type: r.type,
+            uploadedAt: r.uploadedAt,
+            previewType: r.previewType,
+            previewData: r.previewData
         });
-    }
-    
+    });
+    pendingMilestoneFiles = [];
     alert(t('filesUploaded'));
     closeFileUploadModal();
     

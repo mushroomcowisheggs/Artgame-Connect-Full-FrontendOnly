@@ -35,7 +35,7 @@ async function loadTaskMarket() {
                 html += `
                     <div class="project-card">
                         <div class="project-title">${escapeHtml(project.title)}</div>
-                        <div class="project-desc">${escapeHtml(project.description || '')}</div>
+                        <div class="project-desc" style="word-wrap:break-word;white-space:normal;overflow-wrap:break-word;">${escapeHtml(project.description || '')}</div>
                         <div class="project-meta">
                             <span class="status-badge ${statusClass}">${statusText}</span>
                             <span>${t('budget')}: $${project.budget || 0}</span>
@@ -119,6 +119,40 @@ async function loadProjectDetail() {
             const statusText = t(project.status.replace('_', ''));
             const tags = project.tags ? project.tags.split(',').map(t => t.trim()).filter(t => t) : [];
             
+            // 时间进度 & parts/milestones 进度
+            const createdDate = new Date(project.created_at);
+            const now = new Date();
+            const timeLimit = project.time_limit || 30;
+            const daysPassed = Math.floor((now - createdDate) / (1000 * 60 * 60 * 24));
+            const timeProgress = Math.min(100, (daysPassed / timeLimit) * 100);
+
+            let progressBlocks = '';
+            if (project.milestones && project.milestones.length > 0) {
+                const completed = project.milestones.filter(m => m.status === 'completed').length;
+                const pct = (completed / project.milestones.length) * 100;
+                progressBlocks += `
+                <div style="margin-bottom:16px;">
+                    <h4 style="margin:0 0 8px 0;font-size:14px;">${t('milestoneProgress') || 'Milestone Progress'}</h4>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width:${pct}%;"></div>
+                        <div class="progress-bar-text">${completed} / ${project.milestones.length} ${t('milestones')} (${pct.toFixed(1)}%)</div>
+                    </div>
+                </div>`;
+            } else if (project.parts && project.parts.length > 0) {
+                const total = project.parts.reduce((sum, part) => sum + (part.percentage || 0), 0);
+                const avg = total / project.parts.length;
+                progressBlocks += `
+                <div style="margin-bottom:16px;">
+                    <h4 style="margin:0 0 8px 0;font-size:14px;">${t('partsProgress') || 'Parts Progress'}</h4>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width:${avg}%;"></div>
+                        <div class="progress-bar-text">${avg.toFixed(1)}% (${project.parts.length} ${t('parts') || 'parts'})</div>
+                    </div>
+                </div>`;
+            } else {
+                progressBlocks += `<p style='color:#999;margin:0;'>${t('noMilestonesConfigured') || 'No milestones or parts configured'}</p>`;
+            }
+
             let html = `
                 <div class="project-detail-nav" style="margin-bottom:16px;display:flex;gap:8px;">
                     <button class="btn btn-secondary btn-small" onclick="switchTab('taskmarket')" data-i18n="backToTaskMarket">← ${t('backToTaskMarket')}</button>
@@ -128,21 +162,31 @@ async function loadProjectDetail() {
                     <h2>${escapeHtml(project.title)}</h2>
                     <span class="status-badge ${statusClass}">${statusText}</span>
                 </div>
-                
                 <div class="project-detail-section">
                     <h3>${t('description')}</h3>
-                    <p>${escapeHtml(project.description || t('noDescription'))}</p>
+                    <p class="project-detail-description">${escapeHtml(project.description || t('noDescription'))}</p>
                 </div>
-                
                 <div class="project-detail-section">
                     <h3>${t('projectInfo')}</h3>
                     <div class="project-meta">
                         <span><strong>${t('budget')}:</strong> $${project.budget || 0}</span>
                         <span><strong>${t('requester')}:</strong> ${escapeHtml(project.requester?.username || 'Unknown')}</span>
                         <span><strong>${t('creator')}:</strong> ${escapeHtml(project.creator?.username || t('notAssigned'))}</span>
-                        <span><strong>${t('createdAt')}:</strong> ${new Date(project.created_at).toLocaleDateString()}</span>
+                        <span><strong>${t('createdAt') || 'Created At'}:</strong> ${new Date(project.created_at).toLocaleDateString()}</span>
+                        <span><strong>${t('timeLimit') || 'Time Limit'}:</strong> ${timeLimit}d</span>
                     </div>
                     ${tags.length > 0 ? `<div class="skill-tags" style="margin-top:12px;">${tags.map(tag => `<span class="skill-tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+                </div>
+                <div class="project-detail-section">
+                    <h3>${t('projectProgress') || 'Project Progress'}</h3>
+                    <div style="margin-bottom:16px;">
+                        <h4 style="margin:0 0 8px 0;font-size:14px;">${t('timeProgress') || 'Time Progress'}</h4>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width:${timeProgress}%;"></div>
+                            <div class="progress-bar-text">${daysPassed} / ${timeLimit} days (${timeProgress.toFixed(1)}%)</div>
+                        </div>
+                    </div>
+                    ${progressBlocks}
                 </div>
             `;
             
@@ -303,6 +347,12 @@ async function submitReview(projectId, rating, comment) {
  */
 function openCreateProjectModal() {
     document.getElementById('createProjectModal').classList.add('show');
+    // Initialize parts container
+    const container = document.getElementById('projectPartsContainer');
+    if (container) {
+        container.innerHTML = '';
+        addProjectPartRow();
+    }
 }
 
 /**
@@ -314,6 +364,32 @@ function closeCreateProjectModal() {
     document.getElementById('projectDescription').value = '';
     document.getElementById('projectBudget').value = '';
     document.getElementById('projectSkills').value = '';
+    const container = document.getElementById('projectPartsContainer');
+    if (container) container.innerHTML = '';
+}
+
+/**
+ * 添加一个项目部分/里程碑行
+ */
+function addProjectPartRow() {
+    const container = document.getElementById('projectPartsContainer');
+    if (!container) return;
+    const existing = container.querySelectorAll('.project-part-row').length;
+    if (existing >= 10) {
+        alert(t('maxPartsReached') || 'Maximum 10 parts');
+        return;
+    }
+    const row = document.createElement('div');
+    row.className = 'project-part-row';
+    row.style.display = 'flex';
+    row.style.gap = '8px';
+    row.style.alignItems = 'center';
+    row.innerHTML = `
+        <input type="text" class="part-title" placeholder="${t('partTitle') || 'Part Title'}" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+        <input type="number" class="part-percentage" placeholder="${t('partPercentage') || 'Progress %'}" min="0" max="100" style="width:110px;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+        <button type="button" class="btn btn-danger btn-small" onclick="this.closest('.project-part-row').remove()">${t('delete') || 'Delete'}</button>
+    `;
+    container.appendChild(row);
 }
 
 /**
@@ -324,12 +400,52 @@ async function submitCreateProject() {
     const description = document.getElementById('projectDescription').value.trim();
     const budget = parseFloat(document.getElementById('projectBudget').value) || 0;
     const tags = document.getElementById('projectSkills').value.trim();
+    const timeLimitInput = document.getElementById('projectTimeLimit');
+    let timeLimit = parseInt(timeLimitInput ? timeLimitInput.value : '30');
+    if (isNaN(timeLimit) || timeLimit <= 0) timeLimit = 30;
+    if (timeLimit > 365) timeLimit = 365;
+    const partRows = Array.from(document.querySelectorAll('#projectPartsContainer .project-part-row'));
+    const parts = partRows.map(row => {
+        const title = row.querySelector('.part-title').value.trim();
+        let percentage = parseFloat(row.querySelector('.part-percentage').value);
+        if (isNaN(percentage)) percentage = 0;
+        percentage = Math.max(0, Math.min(100, percentage));
+        return title ? { title, percentage } : null;
+    }).filter(p => p);
+    if (parts.length > 10) {
+        alert(t('maxPartsReached') || 'Maximum 10 parts');
+        return;
+    }
+    // Optional: ensure at least one non-empty part if user started editing parts
+    if (partRows.length > 0 && parts.length === 0) {
+        alert(t('enterPartInfo') || 'Please enter part title');
+        return;
+    }
     
     if (!title) {
         alert('Please enter project title');
         return;
     }
     
+    // 描述长度与预算规则（>=500 -> min 50, >=1000 -> 100 + 每增加100预算 +10 字符，最大不超500）
+    const descLen = description.length;
+    let minLen = 0; const maxLen = 500;
+    if (budget >= 500) {
+        minLen = 50;
+        if (budget >= 1000) {
+            minLen = 100 + Math.floor((budget - 1000) / 100) * 10;
+            if (minLen > maxLen) minLen = maxLen;
+        }
+    }
+    if (minLen > 0 && descLen < minLen) {
+        alert(`${t('description')} ${t('mustBeAtLeast') || 'must be at least'} ${minLen} ${t('characters') || 'characters'} (budget ${budget})`);
+        return;
+    }
+    if (descLen > maxLen) {
+        alert(`${t('description')} ${t('cannotExceed') || 'cannot exceed'} ${maxLen} ${t('characters') || 'characters'}`);
+        return;
+    }
+
     try {
         const res = await fetch('../backend/api/api.php?action=create_collaboration_project', {
             method: 'POST',
@@ -338,7 +454,9 @@ async function submitCreateProject() {
                 title: title,
                 description: description,
                 budget: budget,
-                tags: tags
+                tags: tags,
+                parts: parts,
+                time_limit: timeLimit
             })
         });
         const data = await res.json();

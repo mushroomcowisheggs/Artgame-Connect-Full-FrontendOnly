@@ -107,7 +107,11 @@ function toggleLanguage() {
     const currentLang = getCurrentLanguage();
     const newLang = currentLang === 'en' ? 'zh' : 'en';
     setCurrentLanguage(newLang);
-    document.getElementById('langToggleBtn').textContent = newLang === 'en' ? '中文' : 'EN';
+    const btn1 = document.getElementById('langToggleBtn');
+    const btn2 = document.getElementById('langToggleBtnDrawer');
+    const text = newLang === 'en' ? '中文' : 'EN';
+    if (btn1) btn1.textContent = text;
+    if (btn2) btn2.textContent = text;
     updatePageLanguage();
     // 重新加载当前标签页
     if (typeof switchTab === 'function' && typeof currentTab !== 'undefined') {

@@ -34,7 +34,8 @@ class APIAdapter {
                 // ===== 消息相關 =====
                 case 'get_messages':
                 case 'get_public_messages':
-                    return await this.backend.getMessages();
+                    // Pass potential category for filtering
+                    return await this.backend.getMessages(data);
                 
                 case 'add_public_message':
                 case 'add':
@@ -104,6 +105,9 @@ class APIAdapter {
                 case 'update_milestone_status':
                     return await this.backend.updateMilestoneStatus(data);
                 
+                case 'get_milestones':
+                    return await this.backend.getMilestones(data.project_id);
+                
                 case 'get_matching_creators':
                     return await this.backend.getMatchingCreators(data.tags);
                 
@@ -125,6 +129,15 @@ class APIAdapter {
                 
                 case 'submit_project_review':
                     return await this.backend.submitProjectReview(data);
+                
+                case 'get_personal_projects':
+                    return await this.backend.getPersonalProjects();
+                
+                case 'add_personal_project':
+                    return await this.backend.addPersonalProject(data);
+                
+                case 'delete_personal_project':
+                    return await this.backend.deletePersonalProject(data);
                 
                 // ===== 文件上傳 =====
                 case 'upload':

@@ -55,3 +55,49 @@ function switchTab(tabName) {
 function getCurrentTab() {
     return currentTab;
 }
+
+// ===== Mobile Drawer (Hamburger) =====
+// Sidebar (replacing mobile drawer)
+let sidebarOpen = false;
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar-nav');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!sidebar) return;
+    sidebarOpen = !sidebarOpen;
+    if (sidebarOpen) {
+        sidebar.classList.add('open');
+        if (overlay) overlay.classList.add('show');
+    } else {
+        sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('show');
+    }
+}
+
+function closeSidebar() {
+    sidebarOpen = false;
+    const sidebar = document.getElementById('sidebar-nav');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('show');
+}
+
+// 点击 overlay 关闭
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'sidebar-overlay') {
+        closeSidebar();
+    }
+});
+
+// 视口变化：桌面端保持隐藏状态（仅在需要时显示）
+window.addEventListener('resize', () => {
+    if (window.innerWidth > 900 && sidebarOpen) {
+        // 保持可用，但不强制关闭；如需自动关闭可解除注释
+        // closeSidebar();
+    }
+});
+
+// 初始关闭
+window.addEventListener('DOMContentLoaded', () => {
+    closeSidebar();
+});
