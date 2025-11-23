@@ -6,6 +6,57 @@
 let currentWorkbenchProjectId = null;
 let milestones = []; // 里程碑数据
 let pendingMilestoneFiles = []; // 临时待上传文件（含预览数据）
+// 工作台项目聊天前四条消息自动回复计数（按项目分隔）
+let workbenchProjectMessageCounts = {};
+
+// 同步聊天弹窗内容与工作台内嵌聊天
+function syncChatModal() {
+    const src = document.getElementById('workbench-messages');
+    const dst = document.getElementById('chat-messages');
+    if (!src || !dst) return;
+    dst.innerHTML = src.innerHTML;
+    dst.scrollTop = dst.scrollHeight;
+}
+
+// 追加用户消息到两个区域（工作台嵌入 + 弹窗）
+function appendUserProjectMessage(username, text) {
+    const blocks = [document.getElementById('workbench-messages'), document.getElementById('chat-messages')];
+    const html = `
+        <div style="margin-bottom:12px;padding:12px;background:#fff;border-radius:8px;border-left:3px solid #667eea;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                <strong>${escapeHtml(username || 'User')}</strong>
+                <span style="color:#999;font-size:12px;">${new Date().toLocaleString()}</span>
+            </div>
+            <p style="margin:0;color:#333;">${escapeHtml(text)}</p>
+        </div>
+    `;
+    blocks.forEach(b => {
+        if (!b) return;
+        if (b.innerHTML.includes('noChatMessages')) b.innerHTML = html; else b.innerHTML += html;
+        b.scrollTop = b.scrollHeight;
+    });
+}
+
+// 追加系统/自动回复消息
+function appendAutoReplyMessage(text) {
+    const blocks = [document.getElementById('workbench-messages'), document.getElementById('chat-messages')];
+    const replyHtml = `
+        <div style="margin-bottom:12px;padding:12px;background:#f6faff;border-radius:8px;border-left:3px solid #ffa726;opacity:0;transition:opacity .3s;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                <strong>Admin</strong>
+                <span style="color:#999;font-size:12px;">${new Date().toLocaleString()}</span>
+            </div>
+            <p style="margin:0;color:#333;">${escapeHtml(text)}</p>
+        </div>
+    `;
+    blocks.forEach(block => {
+        if (!block) return;
+        if (block.innerHTML.includes('noChatMessages')) block.innerHTML = replyHtml; else block.innerHTML += replyHtml;
+        const last = block.lastElementChild;
+        if (last) requestAnimationFrame(() => { last.style.opacity = '1'; });
+        block.scrollTop = block.scrollHeight;
+    });
+}
 // 全局定义：文件选择预览处理（避免条件内作用域问题）
 function handleMilestoneFileSelection() {
     const fileInput = document.getElementById('milestoneFiles');
@@ -289,6 +340,7 @@ function openChatModal() {
     const modal = document.getElementById('chat-modal');
     if (!modal) return;
     modal.style.display = 'flex';
+    syncChatModal(); // 打开时同步现有项目聊天
 }
 
 function closeChatModal() {
@@ -299,15 +351,10 @@ function closeChatModal() {
 
 function sendChatMessage() {
     const input = document.getElementById('chat-message-input');
-    const list = document.getElementById('chat-messages');
-    if (!input || !list) return;
+    if (!input) return;
     const text = input.value.trim();
     if (!text) return;
-    const div = document.createElement('div');
-    div.style.cssText = 'padding:8px 12px;margin-bottom:8px;background:#fff;border-radius:8px;border:1px solid #eee;font-size:14px;line-height:1.5;';
-    div.innerHTML = `<strong>${escapeHtml(getCurrentUser().username || 'You')}:</strong> ${escapeHtml(text)}`;
-    list.appendChild(div);
-    list.scrollTop = list.scrollHeight;
+    handleNewProjectChatMessage(text);
     input.value = '';
 }
 
@@ -791,37 +838,30 @@ function requestRevision(milestoneId) {
 /**
  * 发送项目消息
  */
+function handleNewProjectChatMessage(message) {
+    const user = getCurrentUser();
+    appendUserProjectMessage(user.username, message);
+    if (!currentWorkbenchProjectId) return; // 必须在项目上下文中才计数
+    if (!workbenchProjectMessageCounts[currentWorkbenchProjectId]) workbenchProjectMessageCounts[currentWorkbenchProjectId] = 0;
+    workbenchProjectMessageCounts[currentWorkbenchProjectId] += 1;
+    const count = workbenchProjectMessageCounts[currentWorkbenchProjectId];
+    let replyText = null;
+    if (count === 1) replyText = 'Good ideas.';
+    else if (count === 2) replyText = 'Sure.';
+    else if (count === 4) replyText = 'Risky and unique.';
+    if (replyText) setTimeout(() => appendAutoReplyMessage(replyText), 2000);
+}
+
 function sendProjectMessage() {
     const input = document.getElementById('workbench-message-input');
+    if (!input) return;
     const message = input.value.trim();
-    
     if (!message) {
         alert(t('pleaseEnterMessage'));
         return;
     }
-    
-    // 简单的原型实现，只在前端显示
-    const messagesDiv = document.getElementById('workbench-messages');
-    const user = getCurrentUser();
-    
-    const messageHtml = `
-        <div style="margin-bottom:12px;padding:12px;background:#fff;border-radius:8px;border-left:3px solid #667eea;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                <strong>${escapeHtml(user.username)}</strong>
-                <span style="color:#999;font-size:12px;">${new Date().toLocaleString()}</span>
-            </div>
-            <p style="margin:0;color:#333;">${escapeHtml(message)}</p>
-        </div>
-    `;
-    
-    if (messagesDiv.innerHTML.includes('noChatMessages')) {
-        messagesDiv.innerHTML = messageHtml;
-    } else {
-        messagesDiv.innerHTML += messageHtml;
-    }
-    
+    handleNewProjectChatMessage(message);
     input.value = '';
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
 /**
