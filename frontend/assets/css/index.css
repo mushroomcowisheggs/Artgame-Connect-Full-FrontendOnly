@@ -761,3 +761,37 @@ body {
         padding: 16px;
     }
 }
+
+/* ===== Carousel Responsive Tweaks ===== */
+@media (max-width: 768px) {
+    .carousel-container {
+        position: relative;
+        display: block; /* remove horizontal space from flex gap */
+        padding: 0; /* tighten */
+    }
+    .carousel-container #carousel-prev,
+    .carousel-container #carousel-next {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        font-size: 18px;
+        padding: 0;
+        background: rgba(0,0,0,0.45);
+        color: #fff;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+        backdrop-filter: blur(4px);
+    }
+    .carousel-container #carousel-prev { left: 8px; }
+    .carousel-container #carousel-next { right: 8px; }
+    .carousel-track-wrapper { width: 100%; }
+    .carousel-slide { height: 220px; object-fit: cover; }
+}
+
+@media (max-width: 480px) {
+    .carousel-slide { height: 200px; }
+    .carousel-container #carousel-prev,
+    .carousel-container #carousel-next { width: 34px; height:34px; font-size:16px; }
+}
