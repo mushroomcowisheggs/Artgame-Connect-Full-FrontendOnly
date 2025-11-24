@@ -876,6 +876,9 @@ function handleNewProjectChatMessage(message) {
     if (count === 1) replyText = 'Good ideas.';
     else if (count === 2) replyText = 'Sure.';
     else if (count === 4) replyText = 'Risky and unique.';
+    else if (count === 5) replyText = 'Great.';
+    else if (count === 6) replyText = 'Amazing!';
+    else if (count === 10) replyText = 'Thanks for the effort!';
     if (replyText) setTimeout(() => appendAutoReplyMessage(replyText), 2000);
 }
 

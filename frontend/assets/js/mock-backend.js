@@ -136,7 +136,7 @@ class MockBackend {
             },
             {
                 id: 2,
-                content: 'Looking for talented 3D artists for my game project. 尋找有才華的3D藝術家參與我的遊戲項目。',
+                content: 'Looking for talented 3D artists for my game project. 寻找有才华的3D艺术家参与我的游戏项目。',
                 author: 'Bob',
                 author_id: 2,
                 category: 'modeling',
@@ -144,7 +144,7 @@ class MockBackend {
             },
             {
                 id: 3,
-                content: 'Exploring new painting techniques with digital brushes. 探索數位繪畫新技術。',
+                content: 'Exploring new painting techniques with digital brushes. 探索数位绘画新技术。',
                 author: 'Charlie',
                 author_id: 3,
                 category: 'painting',
@@ -160,7 +160,7 @@ class MockBackend {
             },
             {
                 id: 5,
-                content: 'Front-end prototype ready for integration. 前端原型已準備好等待整合。',
+                content: 'Our prototype is ready for integration. 我们的原型已准备好等待整合。',
                 author: 'Bob',
                 author_id: 2,
                 category: 'programming',
@@ -199,7 +199,7 @@ class MockBackend {
                 type: 'post',
                 title: 'New Project Available',
                 content: 'Just posted a new character design project!',
-                image: '',
+                image: './assets/uploads/Design.png',
                 author: 'Bob',
                 author_id: 2,
                 like_count: 5,
@@ -210,7 +210,7 @@ class MockBackend {
                 type: 'task',
                 title: 'Urgent: UI Designer Needed',
                 content: 'Need a UI designer for mobile game interface',
-                image: '',
+                image: './assets/uploads/Meidong.png',
                 author: 'Alice',
                 author_id: 1,
                 like_count: 3,
@@ -629,9 +629,16 @@ class MockBackend {
             const comments = this.getTable('db_comments').filter(c => c.activity_id === activity.id);
             const likes = this.getTable('db_likes');
             const isLiked = userId ? likes.some(l => l.activity_id === activity.id && l.user_id === userId) : false;
-            
+
+            // Normalize image path so relative asset references resolve correctly
+            let imagePath = activity.image || '';
+            if (imagePath && !/^https?:\/\//i.test(imagePath) && !imagePath.startsWith('./') && !imagePath.startsWith('/')) {
+                imagePath = './' + imagePath;
+            }
+
             return {
                 ...activity,
+                image: imagePath,
                 comment_count: comments.length,
                 is_liked: isLiked
             };
@@ -978,18 +985,22 @@ class MockBackend {
         this.saveTable('db_collaboration_projects', collabProjects);
 
         if (parts.length > 0) {
+            // Use a local nextId to avoid generateId reading stale localStorage each loop
             const projectParts = this.getTable('db_project_parts');
+            let nextId = this.generateId('db_project_parts');
             parts.forEach((p, idx) => {
                 const titleP = (p.title || `Part ${idx + 1}`).trim();
-                const percentageP = parseFloat(p.percentage || 0);
+                const percentageP = parseFloat(p.percentage || 0) || 0;
+                // Initial status should be not_started (don't mark as in_progress immediately)
                 projectParts.push({
-                    id: this.generateId('db_project_parts'),
+                    id: nextId,
                     project_id: collabProject.id,
                     title: titleP,
                     percentage: percentageP,
-                    status: 'in_progress',
+                    status: 'not_started',
                     created_at: new Date().toISOString()
                 });
+                nextId += 1;
             });
             this.saveTable('db_project_parts', projectParts);
         }
