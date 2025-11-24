@@ -15,7 +15,7 @@ How to run locally
 - Option B — serve with a simple static server (recommended to avoid some browser restrictions):
 
 ```powershell
-cd e:\xjtlu\ENT207TC\Artgame-Connect-v14-Frontend-Only\frontend
+cd {Your Path}\Artgame-Connect-v14-Frontend-Only\frontend
 # If you have Node installed:
 npx http-server -p 8080
 # or using Python 3:
@@ -48,7 +48,7 @@ Known issues
 - 选项 B — 使用静态服务器（推荐，以避免浏览器限制）：
 
 ```powershell
-cd e:\xjtlu\ENT207TC\Artgame-Connect-v14-Frontend-Only\frontend
+cd {你的路径}\Artgame-Connect-v14-Frontend-Only\frontend
 # Node 环境下：
 npx http-server -p 8080
 # 或使用 Python 3：
