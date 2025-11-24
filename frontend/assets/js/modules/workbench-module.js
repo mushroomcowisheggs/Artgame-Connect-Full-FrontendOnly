@@ -249,8 +249,14 @@ async function loadWorkbenchProjectDetail() {
     messagesDiv.innerHTML = `<div class="loading">${t('loading')}</div>`;
     
     try {
-        const res = await fetch(`../backend/api/api.php?action=get_collaboration_project&project_id=${currentWorkbenchProjectId}`);
-        const data = await res.json();
+        // Prefer the front-end mock backend when present (static site), otherwise fall back to network fetch
+        let data;
+        if (window.mockBackend && typeof mockBackend.getCollaborationProject === 'function') {
+            data = await mockBackend.getCollaborationProject(currentWorkbenchProjectId);
+        } else {
+            const res = await fetch(`../backend/api/api.php?action=get_collaboration_project&project_id=${currentWorkbenchProjectId}`);
+            data = await res.json();
+        }
         
         if (data.code === 200 && data.project) {
             const project = data.project;
@@ -276,8 +282,9 @@ async function loadWorkbenchProjectDetail() {
             const timeProgress = Math.min(100, (daysPassed / timeLimit) * 100);
             let partsProgressBlock = '';
             if (project.parts && project.parts.length > 0) {
-                const totalPartsProgress = project.parts.reduce((sum, part) => sum + (part.percentage || 0), 0);
-                const avgPartsProgress = totalPartsProgress / project.parts.length;
+                const partPercentages = project.parts.map(p => (typeof p.percentage !== 'undefined' && p.percentage !== null) ? Number(p.percentage) : 0);
+                const totalPartsProgress = partPercentages.reduce((sum, val) => sum + val, 0);
+                const avgPartsProgress = partPercentages.length ? (totalPartsProgress / partPercentages.length) : 0;
                 partsProgressBlock = `
                 <div style=\"margin-top:20px;\">
                     <h4 style=\"margin:0 0 8px 0;font-size:14px;\">${t('partsProgress') || 'Parts Progress'}</h4>
@@ -383,51 +390,127 @@ async function loadMilestones() {
     // 实际应用中应从后端API获取
     
     if (!currentWorkbenchProjectId) return;
-    
-    // 模拟里程碑数据
-    milestones = [
-        {
-            id: 1,
-            projectId: currentWorkbenchProjectId,
-            title: t('milestone1Title'),
-            description: t('milestone1Desc'),
-            stage: 'planning',
-            payment: 30,
-            files: [], // will be filled from cache
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: 2,
-            projectId: currentWorkbenchProjectId,
-            title: t('milestone2Title'),
-            description: t('milestone2Desc'),
-            stage: 'planning',
-            payment: 40,
-            files: [],
-            createdAt: new Date().toISOString()
-        },
-        {
-            id: 3,
-            projectId: currentWorkbenchProjectId,
-            title: t('milestone3Title'),
-            description: t('milestone3Desc'),
-            stage: 'planning',
-            payment: 30,
-            files: [],
-            createdAt: new Date().toISOString()
+    try {
+        // Try to load project info so milestones reflect the project's configured parts
+        // Prefer mockBackend when available (static site); otherwise fall back to network fetch
+        let data;
+        if (window.mockBackend && typeof mockBackend.getCollaborationProject === 'function') {
+            data = await mockBackend.getCollaborationProject(currentWorkbenchProjectId);
+        } else {
+            const res = await fetch(`../backend/api/api.php?action=get_collaboration_project&project_id=${currentWorkbenchProjectId}`);
+            data = await res.json();
         }
-    ];
 
-    // Load cached files per milestone
-    milestones.forEach(m => {
-        const cached = loadMilestoneFilesFromCache(currentWorkbenchProjectId, m.id);
-        if (cached && cached.length) {
-            m.files = cached;
+        if (data && data.code === 200 && data.project) {
+            const project = data.project;
+
+            // If project defines `parts`, build milestones from that; otherwise fall back to default three-step split
+            if (Array.isArray(project.parts) && project.parts.length > 0) {
+                milestones = project.parts.map((part, idx) => {
+                    const id = part.id || (idx + 1);
+                    // Determine payment percentage for the milestone: prefer explicit `payment`, then `percentage`, fallback to equal split
+                    const payment = Number(part.payment) || Number(part.percentage) || Math.round(100 / project.parts.length);
+                    return {
+                        id: id,
+                        projectId: currentWorkbenchProjectId,
+                        title: part.title || `${t('part')} ${idx + 1}`,
+                        description: part.description || '',
+                        stage: part.stage || 'planning',
+                        payment: payment,
+                        files: [],
+                        createdAt: part.createdAt || new Date().toISOString()
+                    };
+                });
+            } else {
+                // Fallback: keep the previous 3-part defaults when project has no parts defined
+                milestones = [
+                    {
+                        id: 1,
+                        projectId: currentWorkbenchProjectId,
+                        title: t('milestone1Title'),
+                        description: t('milestone1Desc'),
+                        stage: 'planning',
+                        payment: 30,
+                        files: [],
+                        createdAt: new Date().toISOString()
+                    },
+                    {
+                        id: 2,
+                        projectId: currentWorkbenchProjectId,
+                        title: t('milestone2Title'),
+                        description: t('milestone2Desc'),
+                        stage: 'planning',
+                        payment: 40,
+                        files: [],
+                        createdAt: new Date().toISOString()
+                    },
+                    {
+                        id: 3,
+                        projectId: currentWorkbenchProjectId,
+                        title: t('milestone3Title'),
+                        description: t('milestone3Desc'),
+                        stage: 'planning',
+                        payment: 30,
+                        files: [],
+                        createdAt: new Date().toISOString()
+                    }
+                ];
+            }
+
+            // Load cached files per milestone (using the milestone id we generated/used)
+            milestones.forEach(m => {
+                const cached = loadMilestoneFilesFromCache(currentWorkbenchProjectId, m.id);
+                if (cached && cached.length) {
+                    m.files = cached;
+                }
+            });
+
+            renderMilestones();
+            initDragAndDrop();
         }
-    });
-    
-    renderMilestones();
-    initDragAndDrop();
+    } catch (err) {
+        // On error, fall back to previous default behavior so UI still works
+        milestones = [
+            {
+                id: 1,
+                projectId: currentWorkbenchProjectId,
+                title: t('milestone1Title'),
+                description: t('milestone1Desc'),
+                stage: 'planning',
+                payment: 30,
+                files: [],
+                createdAt: new Date().toISOString()
+            },
+            {
+                id: 2,
+                projectId: currentWorkbenchProjectId,
+                title: t('milestone2Title'),
+                description: t('milestone2Desc'),
+                stage: 'planning',
+                payment: 40,
+                files: [],
+                createdAt: new Date().toISOString()
+            },
+            {
+                id: 3,
+                projectId: currentWorkbenchProjectId,
+                title: t('milestone3Title'),
+                description: t('milestone3Desc'),
+                stage: 'planning',
+                payment: 30,
+                files: [],
+                createdAt: new Date().toISOString()
+            }
+        ];
+
+        milestones.forEach(m => {
+            const cached = loadMilestoneFilesFromCache(currentWorkbenchProjectId, m.id);
+            if (cached && cached.length) m.files = cached;
+        });
+
+        renderMilestones();
+        initDragAndDrop();
+    }
 }
 
 /**
