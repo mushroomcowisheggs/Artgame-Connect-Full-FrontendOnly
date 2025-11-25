@@ -33,6 +33,16 @@ Demo credentials
 Known issues
 - `frontend/assets/js/lang.js`: English translation key `errorSearchingCreators` has an incorrect value; you may see an unexpected message when that error occurs.
 
+Platform purpose — solving common pain points
+
+- Matching: The frontend reflects the platform's emphasis on discoverability — feeds, topic groups and profiles are meant to surface relevant creators and projects quickly.    This reduces friction when trying to find collaborators or service providers.
+
+- Follow-up & tracking: The Workbench UI groups projects into clear boards, tasks, milestones and deliverables.    Even in frontend-only demos, the interface demonstrates how tasks are split and tracked to keep collaborators aligned.
+
+- Communication: The client supports structured task fields and templates so requesters publish clear specifications.    The UI keeps comments, attachments and requirement checklists attached to each task to avoid ambiguity.
+
+- Other pain points (secondary)
+
 中文（简体）
 ----------------
 
@@ -65,3 +75,13 @@ python -m http.server 8080
 
 已知问题
 - `frontend/assets/js/lang.js`：英文翻译键 `errorSearchingCreators` 的值被误设，可能导致该错误提示显示不正确。
+
+平台目的——解决常见的痛点
+
+-匹配：前端反映了平台对可发现性的重视- feed，主题组和个人资料旨在快速显示相关的创作者和项目。这减少了在寻找合作者或服务提供者时的摩擦。
+
+-跟进和跟踪：工作台UI将项目划分为明确的板、任务、里程碑和可交付成果。即使在只有前端的演示中，该界面也演示了如何拆分和跟踪任务以保持协作者一致。
+
+-通信：客户端支持结构化任务字段和模板，以便请求者发布清晰的规范。UI将注释、附件和需求检查表附加到每个任务，以避免歧义。
+
+-其他痛点（次要）
